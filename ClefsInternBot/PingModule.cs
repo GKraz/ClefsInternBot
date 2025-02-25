@@ -7,6 +7,7 @@ namespace ClefsInternBot;
 [RequireContext(ContextType.Guild)]
 public class PingModule : InteractionModuleBase<SocketInteractionContext> {
     private static DateTime _lastPing = DateTime.MinValue;
+    private static bool _dayRestrictions = true;
     private readonly double _cooldownMinutes;
     private readonly ulong _channelId;
 
@@ -36,6 +37,9 @@ public class PingModule : InteractionModuleBase<SocketInteractionContext> {
             return;
         }
         
+        var user = (SocketGuildUser)Context.User;
+        var isAdmin = user.GuildPermissions.Administrator;
+        
         var timeNow = DateTime.UtcNow;
         
         var restrictedDays = new[]
@@ -44,7 +48,7 @@ public class PingModule : InteractionModuleBase<SocketInteractionContext> {
         var day = timeNow.DayOfWeek;
         var hour = timeNow.Hour;
 
-        if (restrictedDays.Contains(day) && restrictedHours.Contains(hour)) {
+        if (!isAdmin && _dayRestrictions && restrictedDays.Contains(day) && restrictedHours.Contains(hour)) {
             var lowerDateTime = new DateTime(
                 timeNow.Year,
                 timeNow.Month,
@@ -65,12 +69,10 @@ public class PingModule : InteractionModuleBase<SocketInteractionContext> {
             var lowerUnix = ((DateTimeOffset)lowerDateTime).ToUnixTimeSeconds();
             var upperUnix = ((DateTimeOffset)upperDateTime).ToUnixTimeSeconds();
             
-            await FollowupAsync($"Command can not only be used between <t:{lowerUnix}:t> to <t:{upperUnix}:t> on weekdays (``{restrictedDays[0]}``-``{restrictedDays[^1]}``).");
+            await FollowupAsync($"Command can not be used between <t:{lowerUnix}:t> to <t:{upperUnix}:t> on weekdays (``{restrictedDays[0]}``-``{restrictedDays[^1]}``).");
             return;
         }
-
-        var user = (SocketGuildUser)Context.User;
-        var isAdmin = user.GuildPermissions.Administrator;
+        
         if (isAdmin || timeNow > _lastPing.AddMinutes(_cooldownMinutes)) {
             await FollowupAsync($"<@{user.Id}> wants y'all to get on the server!");
             await Context.Channel.SendMessageAsync($"<@&{Environment.GetEnvironmentVariable("JOIN_ROLE_ID")}>",
@@ -85,5 +87,22 @@ public class PingModule : InteractionModuleBase<SocketInteractionContext> {
             Console.WriteLine(timeSpan);
             await FollowupAsync($@"{timeSpan:mm\:ss} left on cooldown.");
         }
+    }
+
+    [SlashCommand("toggle-day-restrictions", "Toggles the time and day restrictions", runMode: RunMode.Async)]
+    public async Task ToggleDayRestrictions() {
+        await DeferAsync();
+        
+        var user = (SocketGuildUser)Context.User;
+        var isAdmin = user.GuildPermissions.Administrator;
+
+        if (!isAdmin) {
+            await FollowupAsync("You must have administrator to use this command!");
+            return;
+        }
+        
+        _dayRestrictions = !_dayRestrictions;
+
+        await FollowupAsync($"The day and hour restriction has been turned ``{(_dayRestrictions ? "on" : "off")}``!");
     }
 }
